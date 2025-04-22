@@ -6,7 +6,7 @@
 
 ### Demo
 
-[![Demo video](https://raw.githubusercontent.com/a00012025/crawler-scripts/main/assets/demo_preview.jpeg)](https://raw.githubusercontent.com/a00012025/crawler-scripts/main/assets/demo.mp4)
+https://github.com/user-attachments/assets/7959a28c-e215-45ad-9c8d-15b4cba798db
 
 ### 功能特點
 
