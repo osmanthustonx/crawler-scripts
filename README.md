@@ -74,6 +74,6 @@ python wallet_analysis.py 8zab1batbJZZz5MnawzLz3MqkWJBP9LF4AdZCE3y2JJF clean
 腳本將輸出 JSON 格式的數據，包含每個錢包的：
 
 - wallet_summary: 錢包的統計摘要，包括勝率等信息
-- wallet_holdings: 錢包持有的代幣信息
+- wallet_holdings: 錢包交易過的的代幣信息
 
 如果發生錯誤，將返回錯誤信息。
