@@ -4,6 +4,10 @@
 
 這是一個自動化爬蟲腳本，可以訪問 GMGN.ai 網站並獲取 Solana 錢包的勝率統計和交易記錄。
 
+### Demo
+
+[![Demo video](https://raw.githubusercontent.com/a00012025/crawler-scripts/main/assets/demo_preview.jpeg)](https://raw.githubusercontent.com/a00012025/crawler-scripts/main/assets/demo.mp4)
+
 ### 功能特點
 
 - 自動訪問 GMGN.ai 上指定錢包地址的頁面
