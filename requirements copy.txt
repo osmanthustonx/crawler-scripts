@@ -1,0 +1,19 @@
+# 爬蟲相關依賴
+undetected-chromedriver>=3.5.0
+selenium>=4.10.0
+
+# Telegram Bot 相關依賴
+python-telegram-bot>=13.0
+
+# Google Sheet 相關依賴
+gspread>=5.0.0
+oauth2client>=4.1.3
+google-auth>=2.0.0
+google-auth-oauthlib>=0.4.6
+google-auth-httplib2>=0.1.0
+
+# 環境變數相關依賴
+python-dotenv>=1.0.0
+
+# 其他工具依賴
+setuptools>=65.0.0
