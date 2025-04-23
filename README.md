@@ -23,12 +23,18 @@ https://github.com/user-attachments/assets/7959a28c-e215-45ad-9c8d-15b4cba798db
 在使用前，需要安裝以下依賴：
 
 ```bash
+uv venv
+source .venv/bin/activate && echo "虛擬環境已激活"
+
 pip install -r requirements.txt
 ```
 
 或使用 uv 安裝：
 
 ```bash
+uv venv
+source .venv/bin/activate && echo "虛擬環境已激活"
+
 uv pip install -r requirements.txt
 ```
 
@@ -61,6 +67,8 @@ python wallet_analysis.py <錢包地址1> <錢包地址2> <錢包地址3> ...
 
 ```bash
 python bot_main.py
+or
+source .venv/bin/activate && python bot_main.py
 ```
 
 然後可以透過 Telegram 與 Bot 互動，發送錢包地址進行分析。
