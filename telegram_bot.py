@@ -98,17 +98,21 @@ class WalletAnalysisBot:
             await update.message.reply_text("請提供要分析的錢包地址。\n例如: /analyze 5YEdmMQcEt6MEKikYRZdrUwPwL5xhH5fqR2VZ4XXTL7c")
             return
         
-        # 獲取錢包地址
-        wallet_address = context.args[0]
+        # 獲取所有錢包地址
+        wallet_addresses = context.args
         
         # 發送處理中消息
+        addresses_text = "\n".join([f"`{addr}`" for addr in wallet_addresses])
         processing_message = await update.message.reply_text(
-            f"正在分析錢包地址: `{wallet_address}`\n這可能需要一些時間，請耐心等待...",
+            f"正在分析 {len(wallet_addresses)} 個錢包地址:\n{addresses_text}\n這可能需要一些時間，請耐心等待...",
             parse_mode='Markdown'
         )
         
-        # 調用錢包分析函數
-        await self._process_wallet_analysis(update, context, wallet_address, processing_message.message_id)
+        # 根據錢包數量調用不同的處理函數
+        if len(wallet_addresses) == 1:
+            await self._process_wallet_analysis(update, context, wallet_addresses[0], processing_message.message_id)
+        else:
+            await self._process_multiple_wallets(update, context, wallet_addresses, processing_message.message_id)
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """處理文本消息
@@ -120,16 +124,25 @@ class WalletAnalysisBot:
         # 獲取消息文本
         text = update.message.text
         
-        # 檢查是否是錢包地址（簡單檢查）
-        if len(text) >= 32 and not text.startswith('/'):
+        # 檢查是否包含多個錢包地址（按行分割）
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        # 過濾出有效的錢包地址（簡單檢查）
+        wallet_addresses = [line for line in lines if len(line) >= 32 and not line.startswith('/')]
+        
+        if wallet_addresses:
             # 發送處理中消息
+            addresses_text = "\n".join([f"`{addr}`" for addr in wallet_addresses])
             processing_message = await update.message.reply_text(
-                f"正在分析錢包地址: `{text}`\n這可能需要一些時間，請耐心等待...",
+                f"正在分析 {len(wallet_addresses)} 個錢包地址:\n{addresses_text}\n這可能需要一些時間，請耐心等待...",
                 parse_mode='Markdown'
             )
             
-            # 調用錢包分析函數
-            await self._process_wallet_analysis(update, context, text, processing_message.message_id)
+            # 根據錢包數量調用不同的處理函數
+            if len(wallet_addresses) == 1:
+                await self._process_wallet_analysis(update, context, wallet_addresses[0], processing_message.message_id)
+            else:
+                await self._process_multiple_wallets(update, context, wallet_addresses, processing_message.message_id)
         else:
             # 發送幫助信息
             await update.message.reply_text(
@@ -258,58 +271,232 @@ class WalletAnalysisBot:
         
         # 處理保存到 Google Sheet 的回調
         if callback_data.startswith("save_"):
-            wallet_address = callback_data[5:]  # 移除 "save_" 前綴
-            
-            # 檢查錢包數據是否存在
-            logger.info(f"檢查錢包 {wallet_address} 的數據")
-            logger.info(f"context.bot_data 包含的鍵: {list(context.bot_data.keys())}")
-            if 'wallet_data' not in context.bot_data or wallet_address not in context.bot_data['wallet_data']:
+            # 處理保存所有錢包數據
+            if callback_data.startswith("save_all_"):
+                wallet_addresses = callback_data[9:].split("_")  # 移除 "save_all_" 前綴並分割地址
+                
+                # 檢查錢包數據是否存在
+                missing_wallets = []
+                for wallet_address in wallet_addresses:
+                    if 'wallet_data' not in context.bot_data or wallet_address not in context.bot_data['wallet_data']:
+                        missing_wallets.append(wallet_address)
+                
+                if missing_wallets:
+                    await query.edit_message_text(
+                        text=query.message.text + f"\n\n無法保存數據: 找不到部分錢包的數據",
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                # 發送保存中消息
                 await query.edit_message_text(
-                    text=f"無法保存數據: 找不到錢包 `{wallet_address}` 的數據",
+                    text=query.message.text + "\n\n*正在保存所有錢包數據到 Google Sheet...*",
+                    parse_mode='Markdown'
+                )
+                
+                # 調用保存函數
+                if 'save_to_sheet_func' in context.bot_data:
+                    try:
+                        # 創建包含所有錢包數據的字典
+                        all_wallet_data = {
+                            wallet: context.bot_data['wallet_data'][wallet]
+                            for wallet in wallet_addresses
+                        }
+                        
+                        result = await context.application.create_task(
+                            context.bot_data['save_to_sheet_func'](wallet_addresses, all_wallet_data)
+                        )
+                        
+                        if result:
+                            await query.edit_message_text(
+                                text=query.message.text + f"\n\n✅ *已保存所有錢包數據到 Google Sheet*\n[點擊查看]({result})",
+                                parse_mode='Markdown',
+                                disable_web_page_preview=True
+                            )
+                        else:
+                            await query.edit_message_text(
+                                text=query.message.text + "\n\n❌ *保存到 Google Sheet 失敗*",
+                                parse_mode='Markdown'
+                            )
+                    except Exception as e:
+                        logger.error(f"保存到 Google Sheet 時出錯: {e}")
+                        await query.edit_message_text(
+                            text=query.message.text + f"\n\n❌ *保存到 Google Sheet 時出錯: {str(e)}*",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await query.edit_message_text(
+                        text=query.message.text + "\n\n❌ *保存功能未配置*",
+                        parse_mode='Markdown'
+                    )
+            # 處理保存單個錢包數據
+            else:
+                wallet_address = callback_data[5:]  # 移除 "save_" 前綴
+                
+                # 檢查錢包數據是否存在
+                logger.info(f"檢查錢包 {wallet_address} 的數據")
+                logger.info(f"context.bot_data 包含的鍵: {list(context.bot_data.keys())}")
+                if 'wallet_data' not in context.bot_data or wallet_address not in context.bot_data['wallet_data']:
+                    await query.edit_message_text(
+                        text=f"無法保存數據: 找不到錢包 `{wallet_address}` 的數據",
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                # 獲取錢包數據
+                wallet_data = context.bot_data['wallet_data'][wallet_address]
+                
+                # 發送保存中消息
+                await query.edit_message_text(
+                    text=query.message.text + "\n\n*正在保存到 Google Sheet...*",
+                    parse_mode='Markdown'
+                )
+                
+                # 調用保存函數（這應該由主程序提供）
+                logger.info(f"context.bot_data 包含的鍵: {list(context.bot_data.keys())}")
+                if 'save_to_sheet_func' in context.bot_data:
+                    try:
+                        result = await context.application.create_task(
+                            context.bot_data['save_to_sheet_func'](wallet_address, wallet_data)
+                        )
+                        
+                        if result:
+                            await query.edit_message_text(
+                                text=query.message.text + f"\n\n✅ *已保存到 Google Sheet*\n[點擊查看]({result})",
+                                parse_mode='Markdown',
+                                disable_web_page_preview=True
+                            )
+                        else:
+                            await query.edit_message_text(
+                                text=query.message.text + "\n\n❌ *保存到 Google Sheet 失敗*",
+                                parse_mode='Markdown'
+                            )
+                    except Exception as e:
+                        logger.error(f"保存到 Google Sheet 時出錯: {e}")
+                        await query.edit_message_text(
+                            text=query.message.text + f"\n\n❌ *保存到 Google Sheet 時出錯: {str(e)}*",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await query.edit_message_text(
+                        text=query.message.text + "\n\n❌ *保存功能未配置*",
+                        parse_mode='Markdown'
+                    )
+    
+    async def _process_multiple_wallets(
+        self, 
+        update: Update, 
+        context: ContextTypes.DEFAULT_TYPE,
+        wallet_addresses: List[str],
+        message_id: int
+    ) -> None:
+        """處理多個錢包分析
+        
+        Args:
+            update: 更新對象
+            context: 上下文對象
+            wallet_addresses: 錢包地址列表
+            message_id: 處理中消息的 ID
+        """
+        try:
+            # 更新處理中消息
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=message_id,
+                text=f"正在分析 {len(wallet_addresses)} 個錢包地址...\n這可能需要一些時間，請耐心等待...",
+                parse_mode='Markdown'
+            )
+            
+            # 調用錢包分析函數
+            result = await context.application.create_task(
+                self.wallet_analyzer_func(wallet_addresses)
+            )
+            
+            # 檢查結果
+            if not result:
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=message_id,
+                    text="❌ 分析錢包地址失敗: 未返回結果",
                     parse_mode='Markdown'
                 )
                 return
             
-            # 獲取錢包數據
-            wallet_data = context.bot_data['wallet_data'][wallet_address]
+            # 創建結果消息
+            result_message = f"✅ *多錢包分析結果*\n\n分析了 {len(wallet_addresses)} 個錢包地址\n\n"
             
-            # 發送保存中消息
-            await query.edit_message_text(
-                text=query.message.text + "\n\n*正在保存到 Google Sheet...*",
+            # 創建鍵盤標記
+            keyboard = []
+            
+            # 處理每個錢包的結果
+            for wallet_address in wallet_addresses:
+                wallet_data = result.get(wallet_address, {})
+                
+                # 檢查是否有錯誤
+                if "error" in wallet_data:
+                    error_msg = wallet_data.get("error", "未知錯誤")
+                    result_message += f"❌ `{wallet_address}`: 分析失敗 - {error_msg}\n\n"
+                    continue
+                
+                # 獲取錢包摘要數據
+                summary = wallet_data.get("wallet_summary", {})
+                
+                # 將時間戳轉換為可讀格式
+                last_active_time = "無數據"
+                if summary.get("last_active_timestamp", 0) > 0:
+                    from datetime import datetime
+                    last_active_time = datetime.fromtimestamp(summary.get("last_active_timestamp", 0)).strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 添加錢包摘要信息
+                result_message += (
+                    f"*錢包地址:* `{wallet_address}`\n"
+                    f"餘額: {summary.get('balance', 0)} SOL | "
+                    f"總價值: ${summary.get('total_value', 0)} | "
+                    f"代幣數量: {summary.get('token_num', 0)} | "
+                    f"盈虧: ${summary.get('pnl', 0)}\n\n"
+                )
+                
+                # 添加保存按鈕
+                keyboard.append([
+                    InlineKeyboardButton(f"保存 {wallet_address[:6]}... 到 Google Sheet", callback_data=f"save_{wallet_address}")
+                ])
+                
+                # 將錢包數據存儲在上下文中，以便回調時使用
+                if 'wallet_data' not in context.bot_data:
+                    context.bot_data['wallet_data'] = {}
+                
+                context.bot_data['wallet_data'][wallet_address] = wallet_data
+                
+            # 添加全部保存按鈕
+            if len(wallet_addresses) > 1:
+                all_addresses = "_".join(wallet_addresses)
+                if len(all_addresses) < 64:  # 避免回調數據過長
+                    keyboard.append([
+                        InlineKeyboardButton("保存所有錢包到 Google Sheet", callback_data=f"save_all_{all_addresses}")
+                    ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # 更新處理中消息
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=message_id,
+                text=result_message,
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
             
-            # 調用保存函數（這應該由主程序提供）
-            logger.info(f"context.bot_data 包含的鍵: {list(context.bot_data.keys())}")
-            if 'save_to_sheet_func' in context.bot_data:
-                try:
-                    result = await context.application.create_task(
-                        context.bot_data['save_to_sheet_func'](wallet_address, wallet_data)
-                    )
-                    
-                    if result:
-                        await query.edit_message_text(
-                            text=query.message.text + f"\n\n✅ *已保存到 Google Sheet*\n[點擊查看]({result})",
-                            parse_mode='Markdown',
-                            disable_web_page_preview=True
-                        )
-                    else:
-                        await query.edit_message_text(
-                            text=query.message.text + "\n\n❌ *保存到 Google Sheet 失敗*",
-                            parse_mode='Markdown'
-                        )
-                except Exception as e:
-                    logger.error(f"保存到 Google Sheet 時出錯: {e}")
-                    await query.edit_message_text(
-                        text=query.message.text + f"\n\n❌ *保存到 Google Sheet 時出錯: {str(e)}*",
-                        parse_mode='Markdown'
-                    )
-            else:
-                await query.edit_message_text(
-                    text=query.message.text + "\n\n❌ *保存功能未配置*",
-                    parse_mode='Markdown'
-                )
-    
+        except Exception as e:
+            logger.error(f"分析多個錢包時出錯: {e}")
+            await update.message.reply_text(f"分析過程中發生錯誤: {str(e)}")
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=message_id,
+                text=f"❌ 分析錢包地址時發生錯誤: {str(e)}",
+                parse_mode='Markdown'
+            )
+
+
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """處理錯誤
         
